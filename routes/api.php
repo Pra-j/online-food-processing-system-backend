@@ -44,9 +44,9 @@ Route::get('/products/status/{id}', [ProductController::class, 'productsStatus']
 // ----------------------------------------------------
 Route::get('/offers', [OfferController::class, 'index']);
 Route::get('/offers/{id}', [OfferController::class, 'show']);
-Route::post('/offers', [OfferController::class, 'store'])->middleware('auth:sanctum');
-Route::put('/offers/{id}', [OfferController::class, 'update'])->middleware('auth:sanctum');
-Route::delete('/offers/{id}', [OfferController::class, 'destroy'])->middleware('auth:sanctum');
+Route::post('/offers', [OfferController::class, 'store']);
+Route::put('/offers/{id}', [OfferController::class, 'update']);
+Route::delete('/offers/{id}', [OfferController::class, 'destroy']);
 
 // ----------------------------------------------------
 // ORDER ROUTES
@@ -70,21 +70,20 @@ Route::delete('/orders/{orderId}/items/{id}', [OrderItemController::class, 'dest
 // ----------------------------------------------------
 // EMPLOYEE ROUTES
 // ----------------------------------------------------
-Route::middleware('auth:sanctum')->group(function () {
-    Route::get('/employees', [EmployeeController::class, 'index']);
-    Route::get('/employees/{id}', [EmployeeController::class, 'show']);
-    Route::post('/employees', [EmployeeController::class, 'store']);
-    Route::put('/employees/{id}', [EmployeeController::class, 'update']);
-    Route::delete('/employees/{id}', [EmployeeController::class, 'destroy']);
-});
+
+Route::get('/employees', [EmployeeController::class, 'index']);
+Route::get('/employees/{id}', [EmployeeController::class, 'show']);
+Route::post('/employees', [EmployeeController::class, 'store']);
+Route::put('/employees/{id}', [EmployeeController::class, 'update']);
+Route::delete('/employees/{id}', [EmployeeController::class, 'destroy']);
+
 
 // ----------------------------------------------------
 // KITCHEN LOG ROUTES
 // ----------------------------------------------------
-Route::middleware('auth:sanctum')->group(function () {
-    Route::get('/kitchen/logs', [KitchenLogController::class, 'index']);
-    Route::get('/kitchen/logs/{id}', [KitchenLogController::class, 'show']);
-    Route::post('/kitchen/logs', [KitchenLogController::class, 'store']);
-    Route::put('/kitchen/logs/{id}', [KitchenLogController::class, 'update']);
-    Route::delete('/kitchen/logs/{id}', [KitchenLogController::class, 'destroy']);
-});
+
+Route::get('/kitchen/logs', [KitchenLogController::class, 'index']);
+Route::get('/kitchen/logs/{id}', [KitchenLogController::class, 'show']);
+Route::post('/kitchen/logs', [KitchenLogController::class, 'store']);
+Route::put('/kitchen/logs/{id}', [KitchenLogController::class, 'update']);
+Route::delete('/kitchen/logs/{id}', [KitchenLogController::class, 'destroy']);
