@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Order;
 use Illuminate\Http\Request;
 
 class KitchenLogController extends Controller
@@ -60,5 +61,19 @@ class KitchenLogController extends Controller
     public function destroy(string $id)
     {
         //
+    }
+
+    public function updateProductsStatus(Request $request, string $id)
+    {
+        $order = Order::find($id);
+
+        if (!$order) {
+            return response()->json(['message' => 'Order not found'], 404);
+        }
+
+        $order->status = $request->input('status');
+        $order->save();
+
+        return response()->json(['message' => 'Order status updated', 'order' => $order]);
     }
 }

@@ -30,7 +30,7 @@ return new class extends Migration
             $table->dateTime('start_date');
             $table->dateTime('end_date');
 
-            $table->unsignedInteger('max_usage')->default(0);
+            $table->unsignedInteger('max_usage')->default(5);
             $table->unsignedInteger('num_used')->default(0); // 0 = unlimited usage
             $table->boolean('is_active')->default(true);
 
