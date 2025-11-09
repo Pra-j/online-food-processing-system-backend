@@ -16,8 +16,10 @@ class OrderController extends Controller
      */
     public function index()
     {
-        return Order::with('orderItems')->get();
+        // Load orderItems and their product details
+        return Order::with(['orderItems.product'])->get();
     }
+
 
     /**
      * Store a newly created resource in storage.
@@ -335,5 +337,22 @@ class OrderController extends Controller
             ->get();
 
         return response()->json($orders);
+    }
+
+    public function updateOrderStatus(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'status' => 'required|string|in:queued,preparing,served,completed,cancelled',
+        ]);
+
+        $order = Order::find($id);
+        if (!$order) {
+            return response()->json(['message' => 'Order not found'], 404);
+        }
+
+        $order->status = $validated['status'];
+        $order->save();
+
+        return response()->json(['message' => 'Order status updated successfully', 'order' => $order]);
     }
 }

@@ -42,6 +42,7 @@ Route::post('/products', [ProductController::class, 'store']);
 Route::put('/products/{id}', [ProductController::class, 'update']);
 Route::delete('/products/{id}', [ProductController::class, 'destroy']);
 Route::get('/products/status/{id}', [ProductController::class, 'productsStatus']);
+Route::get('/products/sales/summary', [ProductController::class, 'productSalesSummary']);
 
 // ----------------------------------------------------
 // OFFER ROUTES
@@ -57,15 +58,16 @@ Route::delete('/offers/{id}', [OfferController::class, 'destroy']);
 // ----------------------------------------------------
 
 Route::get('/orders', [OrderController::class, 'index']);
-Route::get('/orders/status/{status}', [OrderController::class, 'getOrderByStatus']);
-
+Route::get('/orders/status/{id}', [OrderController::class, 'orderStats'])->where('id', '[0-9]+');
+Route::get('/orders/status/{status}', [OrderController::class, 'getOrderByStatus'])->where('status', '[a-zA-Z]+');
 Route::get('/orders/stats',  [OrderController::class, 'orderStatisticsOverall']);
 Route::get('/orders/{id}', [OrderController::class, 'show']);
 Route::post('/orders', [OrderController::class, 'store']);
 Route::put('/orders/{id}', [OrderController::class, 'update']);
 Route::delete('/orders/{id}', [OrderController::class, 'destroy']);
-Route::get('/orders/status/{id}', [OrderController::class, 'orderStats']);
 Route::get('/orders/monthly/data', [OrderController::class, 'monthlyOrderStats']);
+Route::put('/orders/{id}/status', [OrderController::class, 'updateOrderStatus']);
+
 
 
 // ----------------------------------------------------

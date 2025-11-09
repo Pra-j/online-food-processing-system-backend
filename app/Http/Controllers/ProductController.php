@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Product;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class ProductController extends Controller
 {
@@ -12,7 +13,9 @@ class ProductController extends Controller
      */
     public function index()
     {
-        return Product::with('offers', 'category')->get();
+        return Product::with('offers', 'category')
+            ->orderBy('id', 'desc')
+            ->get();
     }
 
     /**
@@ -32,7 +35,8 @@ class ProductController extends Controller
             'name' => 'required|string|max:255|unique:categories,name',
             'description' => 'nullable|string',
             'price' => 'required|integer',
-            'category_id' => 'required|integer'
+            'category_id' => 'required|integer',
+            'stock' => 'required|integer'
         ]);
 
         $product = Product::create($validated);
@@ -133,6 +137,32 @@ class ProductController extends Controller
             'total_orders' => $totalOrders,
             'first_sold_at' => $firstSoldAt ? $firstSoldAt->format('Y/m/d H:i') : null,
             'last_sold_at' => $lastSoldAt ? $lastSoldAt->format('Y/m/d H:i') : null,
+        ]);
+    }
+
+    public function productSalesSummary(Request $request)
+    {
+        $date = $request->input('date', now()->toDateString());
+
+        $stats = DB::table('order_items')
+            ->join('orders', 'order_items.order_id', '=', 'orders.id') // to access order date
+            ->select('order_items.product_id', DB::raw('SUM(order_items.quantity) as total_quantity'))
+            ->whereDate('orders.created_at', $date)
+            ->groupBy('order_items.product_id')
+            ->get();
+
+        // Attach product names
+        $data = $stats->map(function ($row) {
+            $product = Product::find($row->product_id);
+            return [
+                'name' => $product ? $product->name : 'Unknown',
+                'quantity' => (int) $row->total_quantity,
+            ];
+        });
+
+        return response()->json([
+            'date' => $date,
+            'data' => $data,
         ]);
     }
 }

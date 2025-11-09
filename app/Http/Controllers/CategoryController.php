@@ -190,34 +190,53 @@ class CategoryController extends Controller
 
     public function categoryHourlyStats(Request $request)
     {
-        // dd("HELLO");
         $date = $request->input('date', now()->toDateString()); // default: today
 
         $stats = OrderItem::select(
             'products.category_id',
-            DB::raw('HOUR(order_items.created_at) as hour'),
+            DB::raw('HOUR(orders.created_at) as hour'),
             DB::raw('COUNT(DISTINCT order_items.order_id) as total_orders'),
             DB::raw('SUM(order_items.quantity) as total_quantity')
         )
             ->join('products', 'order_items.product_id', '=', 'products.id')
             ->join('orders', 'order_items.order_id', '=', 'orders.id')
             ->whereDate('orders.created_at', $date)
-            ->groupBy('products.category_id', DB::raw('HOUR(order_items.created_at)'))
+            ->groupBy('products.category_id', DB::raw('HOUR(orders.created_at)'))
             ->orderBy('hour')
             ->get();
 
-        // Map category names and format data nicely
-        $data = $stats->map(function ($row) {
-            $category = Category::find($row->category_id);
-            return [
+        // Fetch all categories at once (optimization)
+        $categories = Category::pluck('name', 'id');
+
+        // Create a map of existing data
+        $dataMap = [];
+        foreach ($stats as $row) {
+            $dataMap[$row->hour][$row->category_id] = [
                 'category_id' => $row->category_id,
-                'category_name' => $category ? $category->name : 'Unknown',
+                'category_name' => $categories[$row->category_id] ?? 'Unknown',
                 'hour' => (int) $row->hour,
                 'total_orders' => (int) $row->total_orders,
                 'total_quantity' => (int) $row->total_quantity,
             ];
-        });
+        }
 
-        return response()->json(['date' => $date, 'data' => $data]);
+        // Fill missing hours (0–23) with 0 values
+        $filled = [];
+        for ($hour = 0; $hour < 24; $hour++) {
+            foreach ($categories as $categoryId => $categoryName) {
+                $filled[] = $dataMap[$hour][$categoryId] ?? [
+                    'category_id' => $categoryId,
+                    'category_name' => $categoryName,
+                    'hour' => $hour,
+                    'total_orders' => 0,
+                    'total_quantity' => 0,
+                ];
+            }
+        }
+
+        return response()->json([
+            'date' => $date,
+            'data' => $filled,
+        ]);
     }
 }
