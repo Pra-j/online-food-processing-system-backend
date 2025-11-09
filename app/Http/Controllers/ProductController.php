@@ -165,4 +165,40 @@ class ProductController extends Controller
             'data' => $data,
         ]);
     }
+
+
+    public function productRecommendations($productId, $limit = 5)
+    {
+        $orderIds = DB::table('order_items')
+            ->where('product_id', $productId)
+            ->pluck('order_id')
+            ->toArray();
+
+        if (empty($orderIds)) {
+            return response()->json(['data' => []]);
+        }
+
+        $coProducts = DB::table('order_items')
+            ->select('product_id', DB::raw('COUNT(*) as co_count'))
+            ->whereIn('order_id', $orderIds)
+            ->where('product_id', '<>', $productId)
+            ->groupBy('product_id')
+            ->orderByDesc('co_count')
+            ->limit($limit)
+            ->get();
+
+        $recommended = $coProducts->map(function ($item) {
+            $product = Product::with('category')->find($item->product_id);
+            return $product ? [
+                'id' => $product->id,
+                'name' => $product->name,
+                'price' => $product->price,
+                'stock' => $product->stock,
+                'category' => $product->category ? $product->category->name : null,
+                'co_order_count' => $item->co_count,
+            ] : null;
+        })->filter();
+
+        return response()->json(['data' => $recommended]);
+    }
 }

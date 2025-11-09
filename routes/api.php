@@ -27,9 +27,9 @@ Route::get('/categories', [CategoryController::class, 'index']);
 Route::get('/categories/statistics', [CategoryController::class, 'categoryStatsOverAll']);
 Route::get('/categories/hourly/stats', [CategoryController::class, 'categoryHourlyStats']);
 Route::get('/categories/{id}', [CategoryController::class, 'show']);
-Route::post('/categories', [CategoryController::class, 'store']);
-Route::put('/categories/{id}', [CategoryController::class, 'update']);
-Route::delete('/categories/{id}', [CategoryController::class, 'destroy']);
+Route::post('/categories', [CategoryController::class, 'store'])->middleware('auth:sanctum');
+Route::put('/categories/{id}', [CategoryController::class, 'update'])->middleware('auth:sanctum');
+Route::delete('/categories/{id}', [CategoryController::class, 'destroy'])->middleware('auth:sanctum');
 Route::get('/categories/stats/{id}', [CategoryController::class, 'categoryStats']);
 Route::get('/categories/chart/data', [CategoryController::class, 'categoryChartData']);
 
@@ -43,6 +43,10 @@ Route::put('/products/{id}', [ProductController::class, 'update']);
 Route::delete('/products/{id}', [ProductController::class, 'destroy']);
 Route::get('/products/status/{id}', [ProductController::class, 'productsStatus']);
 Route::get('/products/sales/summary', [ProductController::class, 'productSalesSummary']);
+
+// PRODUCT RECOMMENDATION ROUTE.
+Route::get('/products/{id}/recommendations', [ProductController::class, 'productRecommendations']);
+
 
 // ----------------------------------------------------
 // OFFER ROUTES
