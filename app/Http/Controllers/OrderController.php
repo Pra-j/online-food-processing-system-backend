@@ -31,6 +31,7 @@ class OrderController extends Controller
             'items.*.quantity' => 'required|integer|min:1',
         ]);
 
+
         DB::beginTransaction();
 
         try {
@@ -47,6 +48,7 @@ class OrderController extends Controller
                 ->where('status', '!=', 'completed')
                 ->first();
 
+
             if (!$order) {
                 $order = Order::create([
                     'table_number' => $validated['table_number'],
@@ -61,12 +63,14 @@ class OrderController extends Controller
                 $discountedPrice = 0;
                 $freebies = 0;
 
+
                 $offer = Offer::where('type', 'product')
                     ->where('product_id', $product->id)
                     ->where('is_active', true)
                     ->where('start_date', '<=', now())
                     ->where('end_date', '>=', now())
                     ->first();
+
 
 
                 if ($offer) {
@@ -99,6 +103,7 @@ class OrderController extends Controller
                     ->where('product_id', $product->id)
                     ->first();
 
+
                 if ($orderItem) {
                     $orderItem->quantity += $item['quantity'];
                     $orderItem->total_product_price += $originalPrice;
@@ -114,9 +119,10 @@ class OrderController extends Controller
                         'total_product_price' => $originalPrice,
                         'discount' => $discountedPrice,
                         'grand_total' => $originalPrice - $discountedPrice,
-                        'offer_id' => $offer->id
+                        'offer_id' => $offer?->id
                     ]);
                 }
+
 
                 $product->decrement('stock', $item['quantity']);
                 if ($freebies) {
@@ -125,6 +131,7 @@ class OrderController extends Controller
 
                 $totalAmount += $originalPrice - $discountedPrice;
             }
+
 
             $globalOffer = Offer::where('type', 'global')
                 ->where('is_active', true)
@@ -214,5 +221,119 @@ class OrderController extends Controller
     {
         //
 
+    }
+
+    public function orderStats(string $id)
+    {
+        $order = Order::with('orderItems.product')->findOrFail($id);
+
+        $totalQuantity = $order->orderItems->sum('quantity');
+        $totalProducts = $order->orderItems->count();
+        $totalRevenue = $order->orderItems->sum('grand_total');
+        $totalDiscount = $order->orderItems->sum('discount');
+        $averageItemPrice = $totalQuantity ? $totalRevenue / $totalQuantity : 0;
+
+        return response()->json([
+            'order_id' => $order->id,
+            'table_number' => $order->table_number,
+            'status' => $order->status,
+            'total_products_ordered' => $totalProducts,
+            'total_quantity' => $totalQuantity,
+            'total_revenue' => $totalRevenue,
+            'total_discount' => $totalDiscount,
+            'average_item_price' => $averageItemPrice,
+            'created_at' => $order->created_at->format('Y/m/d H:i'),
+            'items' => $order->orderItems->map(function ($item) {
+                return [
+                    'product_id' => $item->product_id,
+                    'product_name' => $item->product->name,
+                    'quantity' => $item->quantity,
+                    'unit_price' => $item->unit_price,
+                    'total_product_price' => $item->total_product_price,
+                    'discount' => $item->discount,
+                    'grand_total' => $item->grand_total,
+                    'offer_id' => $item->offer_id,
+                ];
+            })
+        ]);
+    }
+
+    // -------------------------------
+    // Overall statistics for all orders or filtered
+    // -------------------------------
+    public function orderStatisticsOverall(Request $request)
+    {
+        $query = Order::query();
+
+        // Optional date filter
+        if ($request->has('start_date')) {
+            $query->whereDate('created_at', '>=', $request->start_date);
+        }
+        if ($request->has('end_date')) {
+            $query->whereDate('created_at', '<=', $request->end_date);
+        }
+
+        $orders = $query->with('orderItems')->get();
+
+        $totalOrders = $orders->count();
+        $totalProducts = $orders->sum(fn($order) => $order->orderItems->count());
+        $totalQuantity = $orders->sum(fn($order) => $order->orderItems->sum('quantity'));
+        $totalRevenue = $orders->sum(fn($order) => $order->orderItems->sum('grand_total'));
+        $totalDiscount = $orders->sum(fn($order) => $order->orderItems->sum('discount'));
+        $averageOrderValue = $totalOrders ? $totalRevenue / $totalOrders : 0;
+        $averageItemPrice = $totalQuantity ? $totalRevenue / $totalQuantity : 0;
+
+        $productStats = OrderItem::select('product_id', DB::raw('SUM(quantity) as total_sold'))
+            ->groupBy('product_id')
+            ->orderByDesc('total_sold')
+            ->first();
+
+        // Orders count per status
+        $statusCounts = $orders->groupBy('status')->map(fn($items) => $items->count());
+
+        return response()->json([
+            'total_orders' => $totalOrders,
+            'total_products_ordered' => $totalProducts,
+            'total_quantity_sold' => $totalQuantity,
+            'total_revenue' => $totalRevenue,
+            'total_discount' => $totalDiscount,
+            'average_order_value' => $averageOrderValue,
+            'average_item_price' => $averageItemPrice,
+            'most_ordered_product_id' => $productStats->product_id ?? null,
+            'most_ordered_quantity' => $productStats->total_sold ?? 0,
+            'orders_status_breakdown' => $statusCounts, // e.g., ['queued' => 5, 'completed' => 10]
+        ]);
+    }
+
+    public function monthlyOrderStats()
+    {
+        $orders = Order::select(
+            DB::raw("MONTH(created_at) as month_number"),
+            DB::raw("MONTHNAME(created_at) as month"),
+            DB::raw("COUNT(id) as orders"),
+            DB::raw("SUM(total_amount) as revenue")
+        )
+            ->groupBy(DB::raw("MONTH(created_at)"), DB::raw("MONTHNAME(created_at)"))
+            ->orderBy(DB::raw("MONTH(created_at)"))
+            ->get();
+
+        $data = $orders->map(function ($order) {
+            return [
+                'month' => $order->month,
+                'orders' => (int) $order->orders,
+                'revenue' => (float) $order->revenue,
+            ];
+        });
+
+        return response()->json(['data' => $data]);
+    }
+
+    public function getOrderByStatus(Request $request, $status)
+    {
+        $orders = Order::where('status', $status)
+            ->with('orderItems.product')
+            ->get();
+
+        return response()->json($orders);
     }
 }

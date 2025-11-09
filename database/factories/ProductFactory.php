@@ -11,7 +11,7 @@ class ProductFactory extends Factory
     {
         return [
             'category_id' => Category::factory(),
-            'name' => ucfirst($this->faker->unique()->word()),
+            'name' => $this->faker->unique()->words(10, true), // combine 2 words
             'description' => $this->faker->sentence(),
             'price' => $this->faker->randomFloat(2, 50, 500),
             'stock' => $this->faker->numberBetween(5, 50),

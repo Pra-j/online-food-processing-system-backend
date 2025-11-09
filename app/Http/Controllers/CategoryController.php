@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\Category;
+use App\Models\OrderItem;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class CategoryController extends Controller
 {
@@ -92,5 +94,130 @@ class CategoryController extends Controller
         return response()->json([
             'message' => 'Category deleted successfully'
         ], 200);
+    }
+
+    public function categoryStatsOverAll()
+    {
+        $totalProducts = \App\Models\Product::count();
+
+        $ordersData = \App\Models\OrderItem::select(
+            DB::raw('COUNT(DISTINCT order_id) as total_orders'),
+            DB::raw('SUM(quantity) as total_quantity'),
+            DB::raw('SUM(grand_total) as total_revenue')
+        )->first();
+
+        return response()->json([
+            'total_categories' => \App\Models\Category::count(),
+            'total_products' => $totalProducts,
+            'total_orders' => $ordersData->total_orders ?? 0,
+            'total_quantity_sold' => $ordersData->total_quantity ?? 0,
+            'total_revenue' => $ordersData->total_revenue ?? 0,
+        ]);
+    }
+
+
+    public function categoryStats($id, $startDate = null, $endDate = null)
+    {
+        $category = Category::with('products')->findOrFail($id);
+        $productIds = $category->products->pluck('id');
+
+        $query = OrderItem::whereIn('product_id', $productIds);
+
+        if ($startDate) {
+            $query->whereDate('created_at', '>=', $startDate);
+        }
+        if ($endDate) {
+            $query->whereDate('created_at', '<=', $endDate);
+        }
+
+        $ordersData = $query->select(
+            DB::raw('COUNT(DISTINCT order_id) as total_orders'),
+            DB::raw('SUM(quantity) as total_quantity'),
+            DB::raw('SUM(grand_total) as total_revenue')
+        )->first();
+
+        $stats = [
+            'category_id' => $category->id,
+            'category_name' => $category->name,
+            'total_products' => $category->products->count(),
+            'total_orders' => $ordersData->total_orders ?? 0,
+            'total_quantity_sold' => $ordersData->total_quantity ?? 0,
+            'total_revenue' => $ordersData->total_revenue ?? 0,
+        ];
+
+        return response()->json($stats);
+    }
+
+
+    public function categoryChartData()
+    {
+        $categories = Category::with('products')->get();
+
+        $labels = [];
+        $quantityData = [];
+        $revenueData = [];
+
+        foreach ($categories as $category) {
+            $labels[] = $category->name;
+
+            $productIds = $category->products->pluck('id');
+
+            $stats = OrderItem::whereIn('product_id', $productIds)
+                ->select(
+                    DB::raw('SUM(quantity) as total_quantity'),
+                    DB::raw('SUM(grand_total) as total_revenue')
+                )
+                ->first();
+
+            $quantityData[] = $stats->total_quantity ?? 0;
+            $revenueData[] = $stats->total_revenue ?? 0;
+        }
+
+        return response()->json([
+            'labels' => $labels,
+            'datasets' => [
+                [
+                    'label' => 'Quantity Sold',
+                    'data' => $quantityData,
+                ],
+                [
+                    'label' => 'Revenue',
+                    'data' => $revenueData,
+                ],
+            ],
+        ]);
+    }
+
+    public function categoryHourlyStats(Request $request)
+    {
+        // dd("HELLO");
+        $date = $request->input('date', now()->toDateString()); // default: today
+
+        $stats = OrderItem::select(
+            'products.category_id',
+            DB::raw('HOUR(order_items.created_at) as hour'),
+            DB::raw('COUNT(DISTINCT order_items.order_id) as total_orders'),
+            DB::raw('SUM(order_items.quantity) as total_quantity')
+        )
+            ->join('products', 'order_items.product_id', '=', 'products.id')
+            ->join('orders', 'order_items.order_id', '=', 'orders.id')
+            ->whereDate('orders.created_at', $date)
+            ->groupBy('products.category_id', DB::raw('HOUR(order_items.created_at)'))
+            ->orderBy('hour')
+            ->get();
+
+        // Map category names and format data nicely
+        $data = $stats->map(function ($row) {
+            $category = Category::find($row->category_id);
+            return [
+                'category_id' => $row->category_id,
+                'category_name' => $category ? $category->name : 'Unknown',
+                'hour' => (int) $row->hour,
+                'total_orders' => (int) $row->total_orders,
+                'total_quantity' => (int) $row->total_quantity,
+            ];
+        });
+
+        return response()->json(['date' => $date, 'data' => $data]);
     }
 }

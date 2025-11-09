@@ -10,6 +10,7 @@ use App\Http\Controllers\OrderController;
 use App\Http\Controllers\OrderItemController;
 use App\Http\Controllers\EmployeeController;
 use App\Http\Controllers\KitchenLogController;
+use App\Models\Order;
 
 // ----------------------------------------------------
 // AUTHENTICATION ROUTES
@@ -23,11 +24,14 @@ Route::get('/user', [AuthController::class, 'user'])->middleware('auth:sanctum')
 // CATEGORY ROUTES
 // ----------------------------------------------------
 Route::get('/categories', [CategoryController::class, 'index']);
+Route::get('/categories/statistics', [CategoryController::class, 'categoryStatsOverAll']);
+Route::get('/categories/hourly/stats', [CategoryController::class, 'categoryHourlyStats']);
 Route::get('/categories/{id}', [CategoryController::class, 'show']);
 Route::post('/categories', [CategoryController::class, 'store']);
 Route::put('/categories/{id}', [CategoryController::class, 'update']);
 Route::delete('/categories/{id}', [CategoryController::class, 'destroy']);
-
+Route::get('/categories/stats/{id}', [CategoryController::class, 'categoryStats']);
+Route::get('/categories/chart/data', [CategoryController::class, 'categoryChartData']);
 
 // ----------------------------------------------------
 // PRODUCT ROUTES
@@ -53,10 +57,15 @@ Route::delete('/offers/{id}', [OfferController::class, 'destroy']);
 // ----------------------------------------------------
 
 Route::get('/orders', [OrderController::class, 'index']);
+Route::get('/orders/status/{status}', [OrderController::class, 'getOrderByStatus']);
+
+Route::get('/orders/stats',  [OrderController::class, 'orderStatisticsOverall']);
 Route::get('/orders/{id}', [OrderController::class, 'show']);
 Route::post('/orders', [OrderController::class, 'store']);
 Route::put('/orders/{id}', [OrderController::class, 'update']);
 Route::delete('/orders/{id}', [OrderController::class, 'destroy']);
+Route::get('/orders/status/{id}', [OrderController::class, 'orderStats']);
+Route::get('/orders/monthly/data', [OrderController::class, 'monthlyOrderStats']);
 
 
 // ----------------------------------------------------

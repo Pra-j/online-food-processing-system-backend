@@ -115,13 +115,11 @@ class ProductController extends Controller
 
         $orderItems = $query->get();
 
-        // Calculate stats
         $totalSoldQuantity = $orderItems->sum('quantity');
         $totalRevenue = $orderItems->sum('total_price');
         $totalOrders = $orderItems->count();
         $averagePrice = $totalSoldQuantity > 0 ? $totalRevenue / $totalSoldQuantity : 0;
 
-        // Additional stats you can provide
         $firstSoldAt = $orderItems->min('created_at');
         $lastSoldAt = $orderItems->max('created_at');
 
