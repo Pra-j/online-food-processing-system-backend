@@ -96,6 +96,12 @@ class CategoryController extends Controller
         ], 200);
     }
 
+    public function getCategoryNames()
+    {
+        $categories = Category::select('id', 'name')->get();
+        return response()->json($categories);
+    }
+
     public function categoryStatsOverAll()
     {
         $totalProducts = \App\Models\Product::count();
@@ -205,10 +211,8 @@ class CategoryController extends Controller
             ->orderBy('hour')
             ->get();
 
-        // Fetch all categories at once (optimization)
         $categories = Category::pluck('name', 'id');
 
-        // Create a map of existing data
         $dataMap = [];
         foreach ($stats as $row) {
             $dataMap[$row->hour][$row->category_id] = [
@@ -220,7 +224,6 @@ class CategoryController extends Controller
             ];
         }
 
-        // Fill missing hours (0–23) with 0 values
         $filled = [];
         for ($hour = 0; $hour < 24; $hour++) {
             foreach ($categories as $categoryId => $categoryName) {

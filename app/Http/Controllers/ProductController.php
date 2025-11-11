@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Product;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -142,29 +143,34 @@ class ProductController extends Controller
 
     public function productSalesSummary(Request $request)
     {
-        $date = $request->input('date', now()->toDateString());
+        $dateFrom = Carbon::parse($request->input('date_from', now()->toDateString()))->startOfDay();
+        $dateTo = Carbon::parse($request->input('date_to', now()->toDateString()))->endOfDay();
 
+        // Get sales summary
         $stats = DB::table('order_items')
-            ->join('orders', 'order_items.order_id', '=', 'orders.id') // to access order date
+            ->join('orders', 'order_items.order_id', '=', 'orders.id')
             ->select('order_items.product_id', DB::raw('SUM(order_items.quantity) as total_quantity'))
-            ->whereDate('orders.created_at', $date)
+            ->whereBetween('orders.created_at', [$dateFrom, $dateTo])
             ->groupBy('order_items.product_id')
             ->get();
 
-        // Attach product names
-        $data = $stats->map(function ($row) {
-            $product = Product::find($row->product_id);
+        $productIds = $stats->pluck('product_id')->toArray();
+        $products = Product::whereIn('id', $productIds)->pluck('name', 'id');
+
+        $data = $stats->map(function ($row) use ($products) {
             return [
-                'name' => $product ? $product->name : 'Unknown',
+                'name' => $products[$row->product_id] ?? 'Unknown',
                 'quantity' => (int) $row->total_quantity,
             ];
         });
 
         return response()->json([
-            'date' => $date,
+            'date_from' => $dateFrom->toDateString(),
+            'date_to' => $dateTo->toDateString(),
             'data' => $data,
         ]);
     }
+
 
 
     public function productRecommendations($productId, $limit = 5)
@@ -200,5 +206,33 @@ class ProductController extends Controller
         })->filter();
 
         return response()->json(['data' => $recommended]);
+    }
+
+
+    public function outOfStockProducts()
+    {
+        $products = Product::where('stock', '<=', 5)
+            ->orderBy('stock', 'asc')
+            ->get();
+
+        return response()->json([
+            'out_of_stock_products' => $products
+        ]);
+    }
+
+    public function productsByCategory($categoryId = null)
+    {
+        $query = Product::with('offers', 'category')->orderBy('id', 'desc');
+
+        if ($categoryId) {
+            $query->where('category_id', $categoryId);
+        }
+
+        $products = $query->get();
+
+        return response()->json([
+            'category_id' => $categoryId,
+            'products' => $products
+        ]);
     }
 }

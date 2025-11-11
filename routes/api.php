@@ -24,6 +24,7 @@ Route::get('/user', [AuthController::class, 'user'])->middleware('auth:sanctum')
 // CATEGORY ROUTES
 // ----------------------------------------------------
 Route::get('/categories', [CategoryController::class, 'index']);
+Route::get('/categories/names', [CategoryController::class, 'getCategoryNames']);
 Route::get('/categories/statistics', [CategoryController::class, 'categoryStatsOverAll']);
 Route::get('/categories/hourly/stats', [CategoryController::class, 'categoryHourlyStats']);
 Route::get('/categories/{id}', [CategoryController::class, 'show']);
@@ -37,7 +38,11 @@ Route::get('/categories/chart/data', [CategoryController::class, 'categoryChartD
 // PRODUCT ROUTES
 // ----------------------------------------------------
 Route::get('/products', [ProductController::class, 'index']);
-Route::get('/products/{id}', [ProductController::class, 'show']);
+Route::get('/products/out-of-stock', [ProductController::class, 'outOfStockProducts']);
+Route::get('/d/categories/products', [ProductController::class, 'productsByCategory']);
+
+Route::get('/categories/products/{categoryId?}', [ProductController::class, 'productsByCategory']);
+Route::get('/products/{id}', [ProductController::class, 'show'])->where('id', '[0-9]+');;
 Route::post('/products', [ProductController::class, 'store']);
 Route::put('/products/{id}', [ProductController::class, 'update']);
 Route::delete('/products/{id}', [ProductController::class, 'destroy']);
@@ -73,7 +78,6 @@ Route::get('/orders/monthly/data', [OrderController::class, 'monthlyOrderStats']
 Route::put('/orders/{id}/status', [OrderController::class, 'updateOrderStatus']);
 
 
-
 // ----------------------------------------------------
 // ORDER ITEM ROUTES
 // ----------------------------------------------------
@@ -81,6 +85,8 @@ Route::get('/orders/{orderId}/items', [OrderItemController::class, 'index']);
 Route::post('/orders/{orderId}/items', [OrderItemController::class, 'store']);
 Route::put('/orders/{orderId}/items/{id}', [OrderItemController::class, 'update']);
 Route::delete('/orders/{orderId}/items/{id}', [OrderItemController::class, 'destroy']);
+Route::get('/order-items/summary', [OrderItemController::class, 'productSummary']);
+
 
 // ----------------------------------------------------
 // EMPLOYEE ROUTES

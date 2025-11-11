@@ -330,19 +330,24 @@ class OrderController extends Controller
         return response()->json(['data' => $data]);
     }
 
-    public function getOrderByStatus(Request $request, $status)
+    public function getOrderByStatus(Request $request, $status = null)
     {
-        $orders = Order::where('status', $status)
-            ->with('orderItems.product')
-            ->get();
+        $query = Order::with('orderItems.product');
+
+        if ($status) {
+            $query->where('status', $status);
+        }
+
+        $orders = $query->get();
 
         return response()->json($orders);
     }
 
+
     public function updateOrderStatus(Request $request, $id)
     {
         $validated = $request->validate([
-            'status' => 'required|string|in:queued,preparing,served,completed,cancelled',
+            'status' => 'required|string|in:queued,processing,served,completed,cancelled',
         ]);
 
         $order = Order::find($id);
