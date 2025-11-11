@@ -11,10 +11,11 @@ class ProductFactory extends Factory
     {
         return [
             'category_id' => Category::factory(),
-            'name' => $this->faker->unique()->words(2, true), // combine 2 words
+            'name' => $this->faker->unique()->words(2, true),
             'description' => $this->faker->sentence(),
             'price' => $this->faker->randomFloat(2, 50, 500),
             'stock' => $this->faker->numberBetween(5, 50),
+            'food_type' => $this->faker->randomElement(['veg', 'non-veg', 'drinks']),
             'is_active' => true,
         ];
     }

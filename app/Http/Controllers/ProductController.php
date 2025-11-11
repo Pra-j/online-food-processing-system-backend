@@ -37,7 +37,8 @@ class ProductController extends Controller
             'description' => 'nullable|string',
             'price' => 'required|integer',
             'category_id' => 'required|integer',
-            'stock' => 'required|integer'
+            'stock' => 'required|integer',
+            'food_type' => 'required|in:veg,non-veg,drinks',
         ]);
 
         $product = Product::create($validated);
@@ -76,7 +77,8 @@ class ProductController extends Controller
             'description' => 'nullable|string',
             'price' => 'integer',
             'category_id' => 'integer',
-            'stock' => 'integer'
+            'stock' => 'integer',
+            'food_type' => 'in:veg,non-veg,drinks',
 
         ]);
 
