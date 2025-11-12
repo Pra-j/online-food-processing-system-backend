@@ -166,6 +166,8 @@ class OrderController extends Controller
             return response()->json([
                 'message' => 'Order created successfully',
                 'order_id' => $order->id,
+                'order_status' => $order->status,
+                'ordered_product' => $order->orderItems,
                 'total_amount' => $order->total_amount,
                 'global_discount' => $globalDiscount,
             ], 201);
@@ -347,7 +349,7 @@ class OrderController extends Controller
     public function updateOrderStatus(Request $request, $id)
     {
         $validated = $request->validate([
-            'status' => 'required|string|in:queued,processing,served,completed,cancelled',
+            'status' => 'required|string|in:queued,processing,ready,completed,cancelled',
         ]);
 
         $order = Order::find($id);
