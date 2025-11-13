@@ -19,6 +19,7 @@ return new class extends Migration
             $table->decimal('price', 10, 2);
             $table->integer('stock')->default(0);
             $table->enum('food_type', ['veg', 'non-veg', 'drinks']);
+            $table->enum('course_type', ['appetizer', 'main', 'dessert']);
             $table->boolean('is_active')->default(true);
             $table->timestamps();
         });

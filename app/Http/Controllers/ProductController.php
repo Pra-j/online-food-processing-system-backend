@@ -4,7 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Models\Product;
 use Carbon\Carbon;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 class ProductController extends Controller
@@ -15,6 +17,7 @@ class ProductController extends Controller
     public function index()
     {
         return Product::with('offers', 'category')
+            ->where('stock', '!=', 0)
             ->orderBy('id', 'desc')
             ->get();
     }
@@ -39,6 +42,7 @@ class ProductController extends Controller
             'category_id' => 'required|integer',
             'stock' => 'required|integer',
             'food_type' => 'required|in:veg,non-veg,drinks',
+            'course_type' => 'required|in:appetizer,main,dessert'
         ]);
 
         $product = Product::create($validated);
@@ -175,6 +179,7 @@ class ProductController extends Controller
 
 
 
+
     public function productRecommendations($productId, $limit = 5)
     {
         $orderIds = DB::table('order_items')
@@ -202,6 +207,7 @@ class ProductController extends Controller
                 'name' => $product->name,
                 'price' => $product->price,
                 'stock' => $product->stock,
+                'food_type' => $product->food_type,
                 'category' => $product->category ? $product->category->name : null,
                 'co_order_count' => $item->co_count,
             ] : null;
@@ -209,6 +215,8 @@ class ProductController extends Controller
 
         return response()->json(['data' => $recommended]);
     }
+
+
 
 
     public function outOfStockProducts()
@@ -235,6 +243,60 @@ class ProductController extends Controller
         return response()->json([
             'category_id' => $categoryId,
             'products' => $products
+        ]);
+    }
+
+    public function productsByFoodType($type)
+    {
+        $query = Product::with('offers', 'category')->orderBy('id', 'desc');
+        if ($type) {
+            $query->where('food_type', $type);
+        }
+
+        $products = $query->get();
+
+        return response()->json([
+            'type' => $type,
+            'products' => $products
+        ]);
+    }
+
+    public function productsByCourseType($type)
+    {
+        $query = Product::with('offers', 'category')->orderBy('id', 'desc');
+        if ($type) {
+            $query->where('course_type', $type);
+        }
+
+        $products = $query->get();
+
+        return response()->json([
+            'type' => $type,
+            'products' => $products
+        ]);
+    }
+
+    public function searchProducts(Request $request)
+    {
+        $queryText = $request->query('q');
+
+        $query = Product::with('offers', 'category')->orderBy('id', 'desc');
+
+        if ($queryText) {
+            $query->where(function ($q) use ($queryText) {
+                $q->where('name', 'LIKE', "%{$queryText}%")
+                    ->orWhere('description', 'LIKE', "%{$queryText}%")
+                    ->orWhereHas('category', function ($catQuery) use ($queryText) {
+                        $catQuery->where('name', 'LIKE', "%{$queryText}%");
+                    });
+            });
+        }
+
+        $products = $query->get();
+
+        return response()->json([
+            'query' => $queryText,
+            'results' => $products
         ]);
     }
 }

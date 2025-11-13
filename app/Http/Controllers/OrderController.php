@@ -42,7 +42,7 @@ class OrderController extends Controller
             foreach ($validated['items'] as $item) {
                 $product = Product::find($item['product_id']);
                 if ($product->stock < $item['quantity']) {
-                    throw new \Exception("Not enough stock for {$product->name}");
+                    return response()->json("Not enough stock for item {$product->name}", 400);
                 }
             }
 

@@ -38,10 +38,22 @@ Route::get('/categories/chart/data', [CategoryController::class, 'categoryChartD
 // PRODUCT ROUTES
 // ----------------------------------------------------
 Route::get('/products', [ProductController::class, 'index']);
+
+Route::get('/products/search', [ProductController::class, 'searchProducts']);
+
+
 Route::get('/products/out-of-stock', [ProductController::class, 'outOfStockProducts']);
 Route::get('/d/categories/products', [ProductController::class, 'productsByCategory']);
 
+// To get products according to food type -> veg, non-veg, drinks
+Route::get('/e/foodtype/products/{type}', [ProductController::class, 'productsByFoodType']);
+
+//To get products according to course type -> appetizer, main, dessert
+Route::get('/f/coursetype/products/{type}', [ProductController::class, 'productsByCourseType']);
+
+//To get products according to category
 Route::get('/categories/products/{categoryId?}', [ProductController::class, 'productsByCategory']);
+
 Route::get('/products/{id}', [ProductController::class, 'show'])->where('id', '[0-9]+');;
 Route::post('/products', [ProductController::class, 'store']);
 Route::put('/products/{id}', [ProductController::class, 'update']);

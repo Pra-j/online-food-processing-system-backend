@@ -16,6 +16,7 @@ class ProductFactory extends Factory
             'price' => $this->faker->randomFloat(2, 50, 500),
             'stock' => $this->faker->numberBetween(5, 50),
             'food_type' => $this->faker->randomElement(['veg', 'non-veg', 'drinks']),
+            'course_type' => $this->faker->randomElement(['appetizer', 'main', 'dessert']),
             'is_active' => true,
         ];
     }
