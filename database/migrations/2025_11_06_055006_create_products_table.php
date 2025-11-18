@@ -22,6 +22,10 @@ return new class extends Migration
             $table->enum('course_type', ['appetizer', 'main', 'dessert']);
             $table->boolean('is_active')->default(true);
             $table->timestamps();
+            $table->foreignId('media_id')
+                ->nullable()
+                ->constrained('media')
+                ->nullOnDelete();
         });
     }
 

@@ -9,7 +9,7 @@ class Product extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['category_id', 'name', 'description', 'price', 'stock', 'is_active', 'food_type', 'course_type'];
+    protected $fillable = ['category_id', 'name', 'description', 'price', 'stock', 'is_active', 'food_type', 'course_type', 'media_id'];
 
     public function category()
     {
@@ -24,5 +24,10 @@ class Product extends Model
     public function offers()
     {
         return $this->hasMany(Offer::class);
+    }
+
+    public function media()
+    {
+        return $this->belongsTo(\App\Models\Media::class, 'media_id');
     }
 }

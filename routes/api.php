@@ -10,6 +10,7 @@ use App\Http\Controllers\OrderController;
 use App\Http\Controllers\OrderItemController;
 use App\Http\Controllers\EmployeeController;
 use App\Http\Controllers\KitchenLogController;
+use App\Http\Controllers\MediaController;
 use App\Models\Order;
 
 // ----------------------------------------------------
@@ -63,6 +64,11 @@ Route::get('/products/sales/summary', [ProductController::class, 'productSalesSu
 
 // PRODUCT RECOMMENDATION ROUTE.
 Route::get('/products/{id}/recommendations', [ProductController::class, 'productRecommendations']);
+// routes/api.php
+Route::get('/products/search', [ProductController::class, 'search']);
+Route::post('/media', [MediaController::class, 'store']);        // upload single file
+Route::delete('/media/{media}', [MediaController::class, 'destroy']);
+
 
 
 // ----------------------------------------------------

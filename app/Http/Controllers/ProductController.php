@@ -2,12 +2,15 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Media;
 use App\Models\Product;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 class ProductController extends Controller
 {
@@ -16,7 +19,7 @@ class ProductController extends Controller
      */
     public function index()
     {
-        return Product::with('offers', 'category')
+        return Product::with('offers', 'category', 'media')
             ->where('stock', '!=', 0)
             ->orderBy('id', 'desc')
             ->get();
@@ -36,21 +39,63 @@ class ProductController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'name' => 'required|string|max:255|unique:categories,name',
+            'name' => 'required|string|max:255|unique:products,name',
             'description' => 'nullable|string',
-            'price' => 'required|integer',
-            'category_id' => 'required|integer',
+            'price' => 'required|numeric',
+            'category_id' => 'required|integer|exists:categories,id',
             'stock' => 'required|integer',
             'food_type' => 'required|in:veg,non-veg,drinks',
-            'course_type' => 'required|in:appetizer,main,dessert'
+            'course_type' => 'required|in:appetizer,main,dessert',
+            'image' => 'required|file|mimes:jpg,jpeg,png,webp,gif,svg|max:2048'
         ]);
 
-        $product = Product::create($validated);
+        DB::beginTransaction();
+        try {
+            $media_id = null;
 
-        return response()->json([
-            'message' => 'Product created successfully',
-            'category' => $product,
-        ], 201);
+            if ($request->hasFile('image')) {
+                $file = $request->file('image');
+
+                if (!$file->isValid()) {
+                    throw new \Exception('Invalid file upload');
+                }
+
+                $folder = 'products/' . date('Y') . '/' . date('m');
+                $filename = \Illuminate\Support\Str::random(20) . '.' . $file->getClientOriginalExtension();
+                $path = $file->storeAs($folder, $filename, 'public');
+
+                $media = Media::create([
+                    'file_path' => $path,
+                    'file_name' => $file->getClientOriginalName(),
+                    'mime_type' => $file->getMimeType(),
+                    'size' => $file->getSize(),
+                    'disk' => 'public',
+                ]);
+
+                $media_id = $media->id;
+            }
+
+            unset($validated['image']);
+
+            $product = Product::create([
+                ...$validated,
+                'media_id' => $media_id
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Product created successfully',
+                'product' => $product->load('media', 'category')
+            ], 201);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            Log::error('Product creation failed: ' . $e->getMessage());
+            return response()->json([
+                'message' => 'Failed to create product',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
@@ -58,7 +103,7 @@ class ProductController extends Controller
      */
     public function show(string $id)
     {
-        return Product::with('category', 'offers')->where('id', $id)->first();
+        return Product::with('category', 'offers', 'media')->where('id', $id)->first();
     }
 
     /**
@@ -72,27 +117,61 @@ class ProductController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, string $id)
+    public function update(Request $request, $id)
     {
         $product = Product::findOrFail($id);
 
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'price' => 'integer',
-            'category_id' => 'integer',
-            'stock' => 'integer',
-            'food_type' => 'in:veg,non-veg,drinks',
-
+            'price' => 'nullable|numeric',
+            'category_id' => 'nullable|integer|exists:categories,id',
+            'stock' => 'nullable|integer',
+            'food_type' => 'nullable|in:veg,non-veg,drinks',
+            'course_type' => 'nullable|in:appetizer,main,dessert',
+            'image' => 'nullable|file|mimes:jpg,jpeg,png,webp,gif,svg|max:10240'
         ]);
 
-        $product->update($validated);
+        DB::beginTransaction();
+        try {
+            if ($request->hasFile('image')) {
+                $file = $request->file('image');
+                $folder = 'products/' . date('Y') . '/' . date('m');
+                $filename = \Illuminate\Support\Str::random(20) . '.' . $file->getClientOriginalExtension();
+                $path = $file->storeAs($folder, $filename, 'public');
 
-        return response()->json([
-            'message' => 'product updated successfully',
-            'product' => $product,
-        ]);
+                $media = Media::create([
+                    'file_path' => $path,
+                    'file_name' => $file->getClientOriginalName(),
+                    'mime_type' => $file->getMimeType(),
+                    'size' => $file->getSize(),
+                    'disk' => 'public',
+                ]);
+
+                // delete previous media if exists
+                if ($product->media) {
+                    Storage::disk($product->media->disk)->delete($product->media->file_path);
+                    $product->media->delete();
+                }
+
+                $validated['media_id'] = $media->id;
+            }
+
+            unset($validated['image']);
+            $product->update($validated);
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Product updated',
+                'product' => $product->fresh()->load('media', 'category', 'offers')
+            ], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
     }
+
 
     /**
      * Remove the specified resource from storage.
@@ -101,16 +180,22 @@ class ProductController extends Controller
     {
         $product = Product::findOrFail($id);
 
+        // Delete associated media if exists
+        if ($product->media) {
+            Storage::disk($product->media->disk)->delete($product->media->file_path);
+            $product->media->delete();
+        }
+
         $product->delete();
 
         return response()->json([
-            'message' => 'product deleted successfully'
+            'message' => 'Product deleted successfully'
         ], 200);
     }
 
     public function productsStatus(string $id, $startDate = null, $endDate = null)
     {
-        $product = Product::find($id);
+        $product = Product::with('media')->find($id);
 
         if (!$product) {
             return response()->json(['message' => 'Product not found'], 404);
@@ -144,6 +229,7 @@ class ProductController extends Controller
             'total_orders' => $totalOrders,
             'first_sold_at' => $firstSoldAt ? $firstSoldAt->format('Y/m/d H:i') : null,
             'last_sold_at' => $lastSoldAt ? $lastSoldAt->format('Y/m/d H:i') : null,
+            'media' => $product->media,
         ]);
     }
 
@@ -161,12 +247,14 @@ class ProductController extends Controller
             ->get();
 
         $productIds = $stats->pluck('product_id')->toArray();
-        $products = Product::whereIn('id', $productIds)->pluck('name', 'id');
+        $products = Product::with('media')->whereIn('id', $productIds)->get()->keyBy('id');
 
         $data = $stats->map(function ($row) use ($products) {
+            $product = $products[$row->product_id] ?? null;
             return [
-                'name' => $products[$row->product_id] ?? 'Unknown',
+                'name' => $product ? $product->name : 'Unknown',
                 'quantity' => (int) $row->total_quantity,
+                'media' => $product ? $product->media : null,
             ];
         });
 
@@ -176,9 +264,6 @@ class ProductController extends Controller
             'data' => $data,
         ]);
     }
-
-
-
 
     public function productRecommendations($productId, $limit = 5)
     {
@@ -201,7 +286,7 @@ class ProductController extends Controller
             ->get();
 
         $recommended = $coProducts->map(function ($item) {
-            $product = Product::with('category')->find($item->product_id);
+            $product = Product::with('category', 'media')->find($item->product_id);
             return $product ? [
                 'id' => $product->id,
                 'name' => $product->name,
@@ -210,6 +295,7 @@ class ProductController extends Controller
                 'food_type' => $product->food_type,
                 'category' => $product->category ? $product->category->name : null,
                 'co_order_count' => $item->co_count,
+                'media' => $product->media,
             ] : null;
         })->filter();
 
@@ -217,11 +303,10 @@ class ProductController extends Controller
     }
 
 
-
-
     public function outOfStockProducts()
     {
-        $products = Product::where('stock', '<=', 5)
+        $products = Product::with('media', 'category')
+            ->where('stock', '<=', 5)
             ->orderBy('stock', 'asc')
             ->get();
 
@@ -232,7 +317,7 @@ class ProductController extends Controller
 
     public function productsByCategory($categoryId = null)
     {
-        $query = Product::with('offers', 'category')->orderBy('id', 'desc');
+        $query = Product::with('offers', 'category', 'media')->orderBy('id', 'desc');
 
         if ($categoryId) {
             $query->where('category_id', $categoryId);
@@ -248,7 +333,7 @@ class ProductController extends Controller
 
     public function productsByFoodType($type)
     {
-        $query = Product::with('offers', 'category')->orderBy('id', 'desc');
+        $query = Product::with('offers', 'category', 'media')->orderBy('id', 'desc');
         if ($type) {
             $query->where('food_type', $type);
         }
@@ -263,7 +348,7 @@ class ProductController extends Controller
 
     public function productsByCourseType($type)
     {
-        $query = Product::with('offers', 'category')->orderBy('id', 'desc');
+        $query = Product::with('offers', 'category', 'media')->orderBy('id', 'desc');
         if ($type) {
             $query->where('course_type', $type);
         }
@@ -280,7 +365,7 @@ class ProductController extends Controller
     {
         $queryText = $request->query('q');
 
-        $query = Product::with('offers', 'category')->orderBy('id', 'desc');
+        $query = Product::with('offers', 'category', 'media')->orderBy('id', 'desc');
 
         if ($queryText) {
             $query->where(function ($q) use ($queryText) {
@@ -298,5 +383,40 @@ class ProductController extends Controller
             'query' => $queryText,
             'results' => $products
         ]);
+    }
+
+    public function search(Request $request)
+    {
+        $q = trim($request->query('q', ''));
+
+        if ($q === '') {
+            return response()->json(['data' => []], 200);
+        }
+
+        $qLike = '%' . $q . '%';
+
+        $products = Product::with('media', 'category')
+            ->where(function ($w) use ($qLike) {
+                $w->where('name', 'like', $qLike)
+                    ->orWhere('description', 'like', $qLike)
+                    ->orWhere('food_type', 'like', $qLike)
+                    ->orWhereHas('category', function ($c) use ($qLike) {
+                        $c->where('name', 'like', $qLike);
+                    });
+            })
+            ->where('is_active', true)
+            ->orderByRaw("
+            CASE
+                WHEN name LIKE ? THEN 3
+                WHEN description LIKE ? THEN 2
+                ELSE 1
+            END DESC
+        ", [$qLike, $qLike])
+            ->limit(20)
+            ->get();
+
+        return response()->json([
+            'data' => $products
+        ], 200);
     }
 }
