@@ -9,6 +9,6 @@ class KitchenLogSeeder extends Seeder
 {
     public function run(): void
     {
-        KitchenLog::factory(10)->create();
+        KitchenLog::factory()->count(24)->create();
     }
 }
