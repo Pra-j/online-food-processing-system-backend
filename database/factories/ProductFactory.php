@@ -199,6 +199,53 @@ class ProductFactory extends Factory
             'food_type' => 'veg',
             'course_type' => 'appetizer',
         ],
+
+        // Drinks - Can be added to any category or create a new Beverage category
+        [
+            'category_id' => 6, // Using Sandwich category for now, or you can create category_id: 7 for Beverages
+            'name' => 'Fresh Lemon Juice',
+            'description' => 'Freshly squeezed lemon juice with a hint of mint',
+            'price' => 80.00,
+            'stock' => 60,
+            'food_type' => 'drinks',
+            'course_type' => 'appetizer',
+        ],
+        [
+            'category_id' => 6,
+            'name' => 'Mango Lassi',
+            'description' => 'Traditional Nepali yogurt drink with sweet mango pulp',
+            'price' => 100.00,
+            'stock' => 55,
+            'food_type' => 'drinks',
+            'course_type' => 'appetizer',
+        ],
+        [
+            'category_id' => 6,
+            'name' => 'Soft Drink (Coke/Sprite)',
+            'description' => 'Chilled carbonated soft drinks - Choice of Coke or Sprite',
+            'price' => 60.00,
+            'stock' => 80,
+            'food_type' => 'drinks',
+            'course_type' => 'appetizer',
+        ],
+        [
+            'category_id' => 6,
+            'name' => 'Masala Tea',
+            'description' => 'Hot Nepali spiced tea with milk and aromatic spices',
+            'price' => 40.00,
+            'stock' => 70,
+            'food_type' => 'drinks',
+            'course_type' => 'appetizer',
+        ],
+        [
+            'category_id' => 6,
+            'name' => 'Mineral Water',
+            'description' => 'Chilled bottled mineral water',
+            'price' => 30.00,
+            'stock' => 100,
+            'food_type' => 'drinks',
+            'course_type' => 'appetizer',
+        ],
     ];
 
     private static $currentIndex = 0;
