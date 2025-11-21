@@ -265,41 +265,487 @@ class ProductController extends Controller
         ]);
     }
 
+    /**
+     * We start the algorithm here.
+     * Product-to-Product Recommendation using Cosine Similarity
+     * Steps:
+     * 1. Build Order-Product Matrix (orders x products)
+     * 2. Calculate cosine similarity between products
+     * 3. Find products with highest similarity to the source product
+     * 4. Return top N recommendations
+     */
     public function productRecommendations($productId, $limit = 5)
     {
-        $orderIds = DB::table('order_items')
-            ->where('product_id', $productId)
-            ->pluck('order_id')
-            ->toArray();
+        Log::info("=================================================================");
+        Log::info("PRODUCT RECOMMENDATION CALCULATION - Product ID: {$productId}");
+        Log::info("=================================================================");
 
-        if (empty($orderIds)) {
+        $sourceProduct = Product::find($productId);
+
+        if (!$sourceProduct) {
+            Log::warning("Product ID {$productId} not found");
             return response()->json(['data' => []]);
         }
 
-        $coProducts = DB::table('order_items')
-            ->select('product_id', DB::raw('COUNT(*) as co_count'))
-            ->whereIn('order_id', $orderIds)
-            ->where('product_id', '<>', $productId)
-            ->groupBy('product_id')
-            ->orderByDesc('co_count')
-            ->limit($limit)
+        // Check if product has order history
+        $hasOrders = DB::table('order_items')
+            ->where('product_id', $productId)
+            ->exists();
+
+        if (!$hasOrders) {
+            Log::info("Product ID {$productId} has no order history, using fallback recommendations");
+            return $this->fallbackRecommendations($sourceProduct, $limit);
+        }
+
+        // Step 1: Build the order-product matrix
+        Log::info("\n--- STEP 1: Building Order-Product Matrix ---");
+
+        $orderProductData = DB::table('order_items')
+            ->select('order_id', 'product_id', DB::raw('SUM(quantity) as quantity'))
+            ->groupBy('order_id', 'product_id')
             ->get();
 
-        $recommended = $coProducts->map(function ($item) {
-            $product = Product::with('category', 'media')->find($item->product_id);
-            return $product ? [
-                'id' => $product->id,
-                'name' => $product->name,
-                'price' => $product->price,
-                'stock' => $product->stock,
-                'food_type' => $product->food_type,
-                'category' => $product->category ? $product->category->name : null,
-                'co_order_count' => $item->co_count,
-                'media' => $product->media,
-            ] : null;
-        })->filter();
+        // Build matrix: orders as rows, products as columns
+        $matrix = [];
+        $productIds = [];
 
-        return response()->json(['data' => $recommended]);
+        foreach ($orderProductData as $row) {
+            $matrix[$row->order_id][$row->product_id] = $row->quantity;
+            $productIds[$row->product_id] = true;
+        }
+
+        $productIds = array_keys($productIds);
+
+        // Log the matrix in tabular format
+        $this->logOrderProductMatrix($matrix, $productIds);
+
+        // Check if source product is in the matrix
+        if (!in_array($productId, $productIds)) {
+            Log::warning("Source product {$productId} not found in order matrix");
+            return $this->fallbackRecommendations($sourceProduct, $limit);
+        }
+
+        // Step 2: Calculate cosine similarity between source product and all other products
+        Log::info("\n--- STEP 2: Calculating Cosine Similarities ---");
+
+        $similarities = [];
+        $similarityDetails = [];
+
+        foreach ($productIds as $targetProductId) {
+            if ($targetProductId == $productId) {
+                continue; // Skip self
+            }
+
+            // Calculate cosine similarity with detailed logging
+            $details = $this->calculateCosineSimilarityWithDetails($matrix, $productId, $targetProductId);
+            $similarity = $details['similarity'];
+
+            if ($similarity > 0) {
+                $similarities[$targetProductId] = $similarity;
+                $similarityDetails[$targetProductId] = $details;
+            }
+        }
+
+        // Log cosine similarity results in tabular format
+        $this->logCosineSimilarities($productId, $similarities, $similarityDetails);
+
+        // Sort by similarity (highest first)
+        arsort($similarities);
+
+        // Step 3: Get top similar products
+        Log::info("\n--- STEP 3: Selecting Top Recommendations ---");
+
+        $topSimilarIds = array_slice(array_keys($similarities), 0, $limit * 2, true);
+
+        if (empty($topSimilarIds)) {
+            Log::info("No similar products found, using fallback recommendations");
+            return $this->fallbackRecommendations($sourceProduct, $limit);
+        }
+
+        // Fetch product details and filter
+        $recommendations = Product::with('category', 'media')
+            ->whereIn('id', $topSimilarIds)
+            ->where('is_active', true)
+            ->where('stock', '>', 0)
+            ->get()
+            ->map(function ($product) use ($similarities, $productId) {
+                $similarity = $similarities[$product->id];
+
+                // Get co-occurrence count
+                $coCount = DB::table('order_items as oi1')
+                    ->join('order_items as oi2', 'oi1.order_id', '=', 'oi2.order_id')
+                    ->where('oi1.product_id', $productId)
+                    ->where('oi2.product_id', $product->id)
+                    ->distinct('oi1.order_id')
+                    ->count('oi1.order_id');
+
+                // Calculate final score combining cosine similarity and business rules
+                $score = $this->calculateFinalScore($product, $similarity, $coCount);
+
+                return [
+                    'id' => $product->id,
+                    'name' => $product->name,
+                    'price' => $product->price,
+                    'stock' => $product->stock,
+                    'food_type' => $product->food_type,
+                    'course_type' => $product->course_type,
+                    'category' => $product->category ? $product->category->name : null,
+                    'co_order_count' => $coCount,
+                    'avg_quantity' => 0,
+                    'recommendation_score' => $score,
+                    'media' => $product->media,
+                ];
+            })
+            ->sortByDesc('recommendation_score')
+            ->take($limit)
+            ->values();
+
+        // Log final recommendations
+        $this->logFinalRecommendations($recommendations);
+
+        // Supplement with fallback if needed
+        if ($recommendations->count() < $limit) {
+            Log::info("Adding fallback recommendations to reach limit of {$limit}");
+            $fallback = $this->fallbackRecommendations(
+                $sourceProduct,
+                $limit - $recommendations->count(),
+                $recommendations->pluck('id')->toArray()
+            );
+
+            $recommendations = $recommendations->merge($fallback->getData()->data);
+        }
+
+        Log::info("=================================================================");
+        Log::info("RECOMMENDATION CALCULATION COMPLETED");
+        Log::info("=================================================================\n");
+
+        return response()->json(['data' => $recommendations]);
+    }
+
+    /**
+     * Log Order-Product Matrix in tabular format
+     */
+    private function logOrderProductMatrix($matrix, $productIds)
+    {
+        Log::info("Order-Product Matrix (Orders x Products):");
+        Log::info("Total Orders: " . count($matrix) . " | Total Products: " . count($productIds));
+
+        // Create header
+        $header = str_pad("Order ID", 12) . "| " . implode(" | ", array_map(fn($pid) => str_pad("P{$pid}", 8), array_slice($productIds, 0, 10)));
+        Log::info($header);
+        Log::info(str_repeat("-", strlen($header)));
+
+        // Log first 20 orders for readability
+        $orderCount = 0;
+        foreach ($matrix as $orderId => $products) {
+            if ($orderCount++ >= 20) {
+                Log::info("... (showing first 20 orders only)");
+                break;
+            }
+
+            $row = str_pad("Order {$orderId}", 12) . "| ";
+            $values = [];
+            foreach (array_slice($productIds, 0, 10) as $pid) {
+                $values[] = str_pad($products[$pid] ?? '0', 8);
+            }
+            $row .= implode(" | ", $values);
+            Log::info($row);
+        }
+        Log::info("");
+    }
+
+    /**
+     * Calculate Cosine Similarity with detailed information
+     */
+    private function calculateCosineSimilarityWithDetails($matrix, $productA, $productB)
+    {
+        $dotProduct = 0;
+        $magnitudeA = 0;
+        $magnitudeB = 0;
+
+        // Iterate through all orders
+        foreach ($matrix as $orderId => $products) {
+            $valueA = $products[$productA] ?? 0;
+            $valueB = $products[$productB] ?? 0;
+
+            $dotProduct += $valueA * $valueB;
+            $magnitudeA += $valueA * $valueA;
+            $magnitudeB += $valueB * $valueB;
+        }
+
+        $magnitudeA = sqrt($magnitudeA);
+        $magnitudeB = sqrt($magnitudeB);
+
+        // Avoid division by zero
+        if ($magnitudeA == 0 || $magnitudeB == 0) {
+            $similarity = 0;
+        } else {
+            $similarity = $dotProduct / ($magnitudeA * $magnitudeB);
+        }
+
+        return [
+            'similarity' => $similarity,
+            'dot_product' => $dotProduct,
+            'magnitude_a' => round($magnitudeA, 4),
+            'magnitude_b' => round($magnitudeB, 4),
+        ];
+    }
+
+    /**
+     * Log Cosine Similarities in tabular format
+     */
+    private function logCosineSimilarities($sourceProductId, $similarities, $details)
+    {
+        Log::info("Cosine Similarity Calculations for Product ID: {$sourceProductId}");
+
+        $header = str_pad("Target Product", 16) . "| " .
+            str_pad("Dot Product", 14) . "| " .
+            str_pad("Magnitude A", 14) . "| " .
+            str_pad("Magnitude B", 14) . "| " .
+            str_pad("Similarity", 12);
+
+        Log::info($header);
+        Log::info(str_repeat("-", strlen($header)));
+
+        // Sort by similarity for better readability
+        arsort($similarities);
+
+        foreach ($similarities as $targetId => $similarity) {
+            $detail = $details[$targetId];
+
+            $row = str_pad("Product {$targetId}", 16) . "| " .
+                str_pad(number_format($detail['dot_product'], 2), 14) . "| " .
+                str_pad($detail['magnitude_a'], 14) . "| " .
+                str_pad($detail['magnitude_b'], 14) . "| " .
+                str_pad(number_format($similarity, 6), 12);
+
+            Log::info($row);
+        }
+
+        Log::info("\nTop 5 Most Similar Products:");
+        $topFive = array_slice($similarities, 0, 5, true);
+        foreach ($topFive as $productId => $sim) {
+            Log::info("  Product {$productId}: " . number_format($sim, 6));
+        }
+        Log::info("");
+    }
+
+    /**
+     * Log Final Recommendations
+     */
+    private function logFinalRecommendations($recommendations)
+    {
+        Log::info("Final Recommendations with Scores:");
+
+        $header = str_pad("Product ID", 12) . "| " .
+            str_pad("Product Name", 25) . "| " .
+            str_pad("Co-Orders", 12) . "| " .
+            str_pad("Final Score", 13);
+
+        Log::info($header);
+        Log::info(str_repeat("-", strlen($header)));
+
+        foreach ($recommendations as $rec) {
+            $row = str_pad("P{$rec['id']}", 12) . "| " .
+                str_pad(substr($rec['name'], 0, 24), 25) . "| " .
+                str_pad($rec['co_order_count'], 12) . "| " .
+                str_pad(number_format($rec['recommendation_score'], 2), 13);
+
+            Log::info($row);
+        }
+        Log::info("");
+    }
+
+    /**
+     * Calculate Cosine Similarity between two products based on order matrix
+     * Cosine Similarity = (A · B) / (||A|| * ||B||)
+     */
+    private function calculateCosineSimilarity($matrix, $productA, $productB)
+    {
+        $dotProduct = 0;
+        $magnitudeA = 0;
+        $magnitudeB = 0;
+
+        // Iterate through all orders
+        foreach ($matrix as $orderId => $products) {
+            $valueA = $products[$productA] ?? 0;
+            $valueB = $products[$productB] ?? 0;
+
+            $dotProduct += $valueA * $valueB;
+            $magnitudeA += $valueA * $valueA;
+            $magnitudeB += $valueB * $valueB;
+        }
+
+        $magnitudeA = sqrt($magnitudeA);
+        $magnitudeB = sqrt($magnitudeB);
+
+        // Avoid division by zero
+        if ($magnitudeA == 0 || $magnitudeB == 0) {
+            return 0;
+        }
+
+        return $dotProduct / ($magnitudeA * $magnitudeB);
+    }
+
+    /**
+     * Calculate final recommendation score
+     * Combines cosine similarity with business rules
+     */
+    private function calculateFinalScore($product, $cosineSimilarity, $coCount)
+    {
+        // Base score from cosine similarity (0-100 scale)
+        $score = $cosineSimilarity * 70; // 70% weight to cosine similarity
+
+        // Bonus for co-occurrence frequency (up to 20 points)
+        $score += min($coCount * 2, 20);
+
+        // Bonus for complementary course types (10 points)
+        // This is handled in business logic layer
+
+        return round($score, 2);
+    }
+
+    /**
+     * Check if two course types complement each other
+     */
+    private function areComplementaryCourses($courseType1, $courseType2)
+    {
+        $complementaryPairs = [
+            'appetizer' => ['main', 'dessert'],
+            'main' => ['appetizer', 'dessert'],
+            'dessert' => ['appetizer', 'main'],
+        ];
+
+        return in_array($courseType2, $complementaryPairs[$courseType1] ?? []);
+    }
+
+    /**
+     * Fallback recommendations when no order history exists
+     */
+    private function fallbackRecommendations($sourceProduct, $limit, $excludeIds = [])
+    {
+        Log::info("=================================================================");
+        Log::info("FALLBACK RECOMMENDATION CALCULATION");
+        Log::info("=================================================================");
+        Log::info("Source Product ID: {$sourceProduct->id}");
+        Log::info("Source Product Name: {$sourceProduct->name}");
+        Log::info("Source Category ID: {$sourceProduct->category_id}");
+        Log::info("Source Food Type: {$sourceProduct->food_type}");
+        Log::info("Source Course Type: {$sourceProduct->course_type}");
+        Log::info("Source Price: " . number_format($sourceProduct->price, 2));
+        Log::info("Requested Limit: {$limit}");
+        Log::info("Excluded Product IDs: " . implode(', ', $excludeIds));
+        Log::info("");
+
+        $excludeIds[] = $sourceProduct->id;
+
+        $recommendations = Product::with('category', 'media')
+            // ->where('food_type', $sourceProduct->food_type)
+            ->where('is_active', true)
+            ->where('stock', '>', 0)
+            ->whereNotIn('id', $excludeIds)
+            ->get()
+            ->map(function ($product) use ($sourceProduct) {
+                $score = 0;
+                $scoreBreakdown = [];
+
+                // Prioritize complementary courses
+                if ($this->areComplementaryCourses($product->course_type, $sourceProduct->course_type)) {
+                    $score += 40;
+                    $scoreBreakdown[] = 'Complementary Course: +40';
+                }
+
+                // Same category products
+                if ($product->category_id === $sourceProduct->category_id) {
+                    $score += 30;
+                    $scoreBreakdown[] = 'Same Category: +30';
+                }
+
+                // Price similarity (closer price = better match)
+                $priceDiff = abs($product->price - $sourceProduct->price);
+                $maxPrice = max($product->price, $sourceProduct->price);
+                $priceScore = $maxPrice > 0 ? max(0, 30 - ($priceDiff / $maxPrice * 30)) : 0;
+                $score += $priceScore;
+                $scoreBreakdown[] = 'Price Similarity: +' . number_format($priceScore, 2);
+
+                return [
+                    'id' => $product->id,
+                    'name' => $product->name,
+                    'price' => $product->price,
+                    'stock' => $product->stock,
+                    'food_type' => $product->food_type,
+                    'course_type' => $product->course_type,
+                    'category' => $product->category ? $product->category->name : null,
+                    'category_id' => $product->category_id,
+                    'co_order_count' => 0,
+                    'avg_quantity' => 0,
+                    'recommendation_score' => $score,
+                    'score_breakdown' => $scoreBreakdown,
+                    'media' => $product->media,
+                    'reason' => 'Similar product',
+                ];
+            })
+            ->sortByDesc('recommendation_score')
+            ->take($limit)
+            ->values();
+
+        // Log fallback calculation details
+        $this->logFallbackCalculations($sourceProduct, $recommendations);
+
+        Log::info("=================================================================");
+        Log::info("FALLBACK RECOMMENDATION COMPLETED");
+        Log::info("=================================================================\n");
+
+        // Remove score_breakdown from final response
+        $finalRecommendations = $recommendations->map(function ($rec) {
+            unset($rec['score_breakdown']);
+            unset($rec['category_id']);
+            return $rec;
+        });
+
+        return response()->json(['data' => $finalRecommendations]);
+    }
+
+    /**
+     * Log Fallback Recommendations Calculation Details
+     */
+    private function logFallbackCalculations($sourceProduct, $recommendations)
+    {
+        Log::info("--- Fallback Scoring Breakdown ---");
+        Log::info("Scoring Rules:");
+        Log::info("  - Complementary Course Type: +40 points");
+        Log::info("  - Same Category: +30 points");
+        Log::info("  - Price Similarity: up to +30 points (based on price difference)");
+        Log::info("");
+
+        $header = str_pad("Product ID", 12) . "| " .
+            str_pad("Product Name", 25) . "| " .
+            str_pad("Category", 15) . "| " .
+            str_pad("Course", 12) . "| " .
+            str_pad("Price", 10) . "| " .
+            str_pad("Score", 8);
+
+        Log::info($header);
+        Log::info(str_repeat("-", strlen($header)));
+
+        foreach ($recommendations as $rec) {
+            $row = str_pad("P{$rec['id']}", 12) . "| " .
+                str_pad(substr($rec['name'], 0, 24), 25) . "| " .
+                str_pad(substr($rec['category'] ?? 'N/A', 0, 14), 15) . "| " .
+                str_pad($rec['course_type'], 12) . "| " .
+                str_pad(number_format($rec['price'], 2), 10) . "| " .
+                str_pad(number_format($rec['recommendation_score'], 2), 8);
+
+            Log::info($row);
+
+            // Log score breakdown
+            if (!empty($rec['score_breakdown'])) {
+                Log::info("  └─ " . implode(', ', $rec['score_breakdown']));
+            }
+        }
+
+        Log::info("");
+        Log::info("Total Recommendations Generated: " . $recommendations->count());
     }
 
 
